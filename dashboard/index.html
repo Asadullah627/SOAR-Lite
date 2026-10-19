@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOAR Lite</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --text: #1d2330; --muted: #5f6b7a; --border: #dde1e7;
+    --accent: #2457c5; --accent-text: #ffffff; --danger: #b42318; --ok: #1a7f37; --warn: #9a6700;
+    --chip: #eef1f5; --mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11151c; --panel: #181e27; --text: #e4e8ee; --muted: #93a0b0; --border: #2a3340;
+      --accent: #5b8cff; --accent-text: #0b0f15; --danger: #ff6b5e; --ok: #4ac26b; --warn: #e3b341; --chip: #222a35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 20px; background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; }
+  header .spacer { flex: 1; }
+  #live { font-size: 12px; color: var(--muted); }
+  #live.on { color: var(--ok); }
+  nav { display: flex; gap: 2px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--border); overflow-x: auto; }
+  nav button { border: 0; background: none; padding: 10px 12px; color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; font: inherit; white-space: nowrap; }
+  nav button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  main { padding: 20px; max-width: 1300px; margin: 0 auto; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: var(--chip); }
+  .mono { font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; background: var(--chip); font-size: 12px; white-space: nowrap; }
+  .sev-CRITICAL, .sev-HIGH, .st-failed, .st-completed_with_errors, .st-rejected, .st-Offline { color: var(--danger); font-weight: 600; }
+  .sev-MEDIUM, .st-awaiting_approval, .st-skipped, .st-running { color: var(--warn); font-weight: 600; }
+  .st-completed, .st-success, .st-Online, .st-valid { color: var(--ok); font-weight: 600; }
+  button.btn { border: 1px solid var(--border); background: var(--panel); color: var(--text); padding: 5px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
+  button.btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.btn.danger { color: var(--danger); }
+  button.btn:disabled { opacity: .5; cursor: default; }
+  input, select { font: inherit; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); }
+  form.inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .stat .v { font-size: 22px; font-weight: 650; }
+  .stat .l { font-size: 12px; color: var(--muted); }
+  pre { background: var(--chip); padding: 10px; border-radius: 6px; overflow: auto; max-height: 420px; font-family: var(--mono); font-size: 12px; }
+  .muted { color: var(--muted); }
+  #msg { position: fixed; right: 16px; bottom: 16px; max-width: 420px; padding: 10px 14px; border-radius: 6px; background: var(--text); color: var(--bg); display: none; z-index: 20; }
+  #login { max-width: 340px; margin: 12vh auto; }
+  #login input { width: 100%; margin-bottom: 10px; }
+  dialog { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); width: min(900px, 94vw); padding: 18px; }
+  dialog::backdrop { background: rgba(0,0,0,.45); }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  h3 { font-size: 13px; margin: 14px 0 6px; color: var(--muted); }
+  .row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div id="login" class="panel" hidden>
+  <h2>SOAR Lite sign in</h2>
+  <form id="login-form">
+    <input id="login-user" autocomplete="username" placeholder="Username" value="admin" required>
+    <input id="login-pass" type="password" autocomplete="current-password" placeholder="Password" required>
+    <button class="btn primary" type="submit">Sign in</button>
+    <p id="login-error" class="sev-HIGH"></p>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <h1>SOAR Lite</h1>
+    <span id="live">● offline</span>
+    <span class="spacer"></span>
+    <span id="whoami" class="muted"></span>
+    <button class="btn" id="logout">Sign out</button>
+  </header>
+  <nav id="tabs"></nav>
+  <main id="view"></main>
+</div>
+
+<dialog id="detail"><div id="detail-body"></div><p><button class="btn" onclick="document.getElementById('detail').close()">Close</button></p></dialog>
+<div id="msg"></div>
+
+<script>
+"use strict";
+// All server data is rendered with textContent (never innerHTML): alerts contain attacker payloads.
+const TABS = ["Overview", "Alerts", "Playbooks", "Blocked IPs", "Agents", "Cases", "Threat intel", "Audit"];
+let token = null, current = "Overview", ws = null, refreshTimer = null;
+try { token = sessionStorage.getItem("soar_token"); } catch (e) {}
+
+function h(tag, attrs, ...children) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") el.className = v;
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined && v !== false) el.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of children.flat()) {
+    if (c === null || c === undefined || c === false) continue;
+    el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  }
+  return el;
+}
+const chip = (text, cls) => h("span", { class: "chip " + (cls || "") }, text ?? "—");
+const fmt = ts => ts ? new Date(ts).toLocaleString() : "—";
+function toast(text, ms = 4000) {
+  const m = document.getElementById("msg");
+  m.textContent = text; m.style.display = "block";
+  clearTimeout(m._t); m._t = setTimeout(() => m.style.display = "none", ms);
+}
+
+async function api(method, path, body) {
+  const opts = { method, headers: { "Authorization": "Bearer " + token } };
+  if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+  const res = await fetch(path, opts);
+  if (res.status === 401) { signOut(); throw new Error("session expired"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+  return data;
+}
+
+// ------------------------------------------------------------- auth
+function showLogin() {
+  document.getElementById("app").hidden = true;
+  document.getElementById("login").hidden = false;
+}
+function signOut() {
+  token = null;
+  try { sessionStorage.removeItem("soar_token"); } catch (e) {}
+  if (ws) { ws.onclose = null; ws.close(); ws = null; }
+  showLogin();
+}
+document.getElementById("login-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const err = document.getElementById("login-error"); err.textContent = "";
+  try {
+    const res = await fetch("/login", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: document.getElementById("login-user").value, password: document.getElementById("login-pass").value }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "sign in failed");
+    token = data.token;
+    try { sessionStorage.setItem("soar_token", token); } catch (e) {}
+    document.getElementById("login-pass").value = "";
+    start(data.username);
+  } catch (e) { err.textContent = e.message; }
+});
+document.getElementById("logout").addEventListener("click", async () => {
+  try { await api("POST", "/logout"); } catch (e) {}
+  signOut();
+});
+
+// ------------------------------------------------------------- live updates
+function connectWs() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+  const live = document.getElementById("live");
+  ws.onopen = () => { live.textContent = "● live"; live.className = "on"; };
+  ws.onmessage = ev => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "alert") toast(`New alert: ${msg.data.alert_type} (${msg.data.severity})`);
+    if (msg.type === "playbook" && msg.data.status === "awaiting_approval") toast("A playbook is waiting for approval");
+    clearTimeout(refreshTimer); refreshTimer = setTimeout(render, 400);
+  };
+  ws.onclose = () => {
+    live.textContent = "● offline"; live.className = "";
+    if (token) setTimeout(connectWs, 5000);
+  };
+}
+
+// ------------------------------------------------------------- views
+const views = {
+  async "Overview"() {
+    const m = await api("GET", "/metrics");
+    const pct = v => v === null || v === undefined ? "—" : (v * 100).toFixed(0) + "%";
+    const sec = v => v === null || v === undefined ? "—" : v.toFixed(2) + " s";
+    const stat = (v, l) => h("div", { class: "stat" }, h("div", { class: "v" }, v), h("div", { class: "l" }, l));
+    const kv = obj => h("table", {}, h("tbody", {}, Object.entries(obj || {}).map(([k, v]) => h("tr", {}, h("td", {}, k), h("td", {}, v)))));
+    return [
+      h("div", { class: "stats" },
+        stat(m.total_alerts, "Alerts"), stat(m.automated_executions, "Automated responses"),
+        stat(sec(m.avg_ingest_to_response_seconds), "Avg ingest → response"),
+        stat(sec(m.avg_execution_seconds), "Avg playbook run time"),
+        stat(pct(m.block_success_rate), "Block success rate"), stat(m.active_blocks, "Active blocks")),
+      h("div", { class: "panel", style: "margin-top:16px" },
+        h("h3", {}, "Alerts by type"), kv(m.alerts_by_type),
+        h("h3", {}, "Alerts by severity"), kv(m.alerts_by_severity),
+        h("h3", {}, "Playbook executions by status"), kv(m.executions_by_status)),
+      h("div", { class: "panel" }, h("button", { class: "btn primary", onclick: downloadReport }, "Generate report (JSON)")),
+    ];
+  },
+
+  async "Alerts"() {
+    const { alerts } = await api("GET", "/alerts");
+    return h("div", { class: "panel" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["ID", "Time", "Type", "Severity", "Source IP", "Agent", "Rule", "Status"].map(t => h("th", {}, t)))),
+      h("tbody", {}, alerts.length ? alerts.map(a => h("tr", { class: "clickable", onclick: () => alertDetail(a.id) },
+        h("td", {}, a.id), h("td", {}, fmt(a.received_at)), h("td", {}, chip(a.alert_type)),
+        h("td", { class: "sev-" + a.severity }, a.severity), h("td", { class: "mono" }, a.source_ip || "—"),
+        h("td", {}, a.agent_id || "—"), h("td", {}, `${a.rule_id} · ${a.description}`), h("td", {}, a.status)))
+        : h("tr", {}, h("td", { colspan: 8, class: "muted" }, "No alerts yet.")))));
+  },
+
+  async "Playbooks"() {
+    const [{ executions }, { playbooks }] = await Promise.all([api("GET", "/playbooks/executions"), api("GET", "/playbooks")]);
+    return [
+      h("div", { class: "panel" }, h("h2", {}, "Executions"), h("table", {},
+        h("thead", {}, h("tr", {}, ["ID", "Playbook", "Alert", "Mode", "Status", "Started", "Finished", ""].map(t => h("th", {}, t)))),
+        h("tbody", {}, executions.length ? executions.map(e => h("tr", {},
+          h("td", {}, e.id), h("td", {}, e.playbook_id), h("td", {}, `#${e.alert_id} ${e.alert_type}`), h("td", {}, e.mode),
+          h("td", { class: "st-" + e.status }, e.status), h("td", {}, fmt(e.started_at)), h("td", {}, fmt(e.finished_at)),
+          h("td", {}, h("div", { class: "row-actions" },
+            h("button", { class: "btn", onclick: () => executionDetail(e.id) }, "Steps"),
+            e.status === "awaiting_approval" && h("button", { class: "btn primary", onclick: () => act("POST", `/playbooks/executions/${e.id}/approve`, undefined, "Approved and executed") }, "Approve"),
+            e.status === "awaiting_approval" && h("button", { class: "btn danger", onclick: () => act("POST", `/playbooks/executions/${e.id}/reject`, undefined, "Rejected") }, "Reject")))))
+          : h("tr", {}, h("td", { colspan: 8, class: "muted" }, "No executions yet."))))),
+      h("div", { class: "panel" }, h("h2", {}, "Playbook definitions"), h("table", {},
+        h("thead", {}, h("tr", {}, ["ID", "Name", "Alert type", "Mode", "Steps"].map(t => h("th", {}, t)))),
+        h("tbody", {}, playbooks.map(p => h("tr", {}, h("td", {}, p.id), h("td", {}, p.name), h("td", {}, p.alert_type), h("td", {}, p.mode), h("td", {}, p.steps.join(" → "))))))),
+    ];
+  },
+
+  async "Blocked IPs"() {
+    const { blocked } = await api("GET", "/firewall/blocked");
+    const input = h("input", { placeholder: "IP address, e.g. 10.0.0.99", required: true });
+    const form = h("form", { class: "inline", onsubmit: ev => { ev.preventDefault(); act("POST", "/firewall/block", { ip: input.value.trim() }, "Blocked " + input.value.trim()); } },
+      input, h("button", { class: "btn primary", type: "submit" }, "Block IP"));
+    return [
+      h("div", { class: "panel" }, h("h2", {}, "Manual block"), form),
+      h("div", { class: "panel" }, h("table", {},
+        h("thead", {}, h("tr", {}, ["IP", "Reason", "Enforced by", "Alert", "By", "Blocked at", ""].map(t => h("th", {}, t)))),
+        h("tbody", {}, blocked.length ? blocked.map(b => h("tr", {},
+          h("td", { class: "mono" }, b.ip), h("td", {}, b.reason), h("td", {}, b.enforced_by), h("td", {}, b.alert_id ?? "—"),
+          h("td", {}, b.blocked_by), h("td", {}, fmt(b.blocked_at)),
+          h("td", {}, h("button", { class: "btn danger", onclick: () => act("DELETE", "/firewall/unblock/" + encodeURIComponent(b.ip), undefined, "Unblocked " + b.ip) }, "Unblock"))))
+          : h("tr", {}, h("td", { colspan: 7, class: "muted" }, "No active blocks."))))),
+    ];
+  },
+
+  async "Agents"() {
+    const { agents } = await api("GET", "/agents");
+    return h("div", { class: "panel" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["Agent ID", "Host", "Address", "Status", "Admin", "Isolated", "Last seen", ""].map(t => h("th", {}, t)))),
+      h("tbody", {}, agents.length ? agents.map(a => h("tr", {},
+        h("td", {}, a.agent_id, a.dry_run ? h("span", { class: "chip", style: "margin-left:6px" }, "dry-run") : null),
+        h("td", {}, a.hostname), h("td", { class: "mono" }, `${a.ip}:${a.port}`),
+        h("td", { class: "st-" + a.status }, a.status), h("td", {}, a.admin ? "yes" : "no"), h("td", { class: a.isolated ? "sev-HIGH" : "" }, a.isolated ? "yes" : "no"),
+        h("td", {}, fmt(a.last_seen)),
+        h("td", {}, a.isolated
+          ? h("button", { class: "btn", onclick: () => act("POST", `/agents/${encodeURIComponent(a.agent_id)}/release`, undefined, "Released " + a.agent_id) }, "Release")
+          : h("button", { class: "btn danger", onclick: () => confirm(`Isolate ${a.agent_id}? Only the SOAR backend will stay reachable.`) && act("POST", `/agents/${encodeURIComponent(a.agent_id)}/isolate`, undefined, "Isolated " + a.agent_id) }, "Isolate"))))
+        : h("tr", {}, h("td", { colspan: 8, class: "muted" }, "No agents have registered.")))));
+  },
+
+  async "Cases"() {
+    const { cases } = await api("GET", "/cases");
+    return h("div", { class: "panel" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["Case", "Title", "Severity", "Agent", "Evidence", "Created", ""].map(t => h("th", {}, t)))),
+      h("tbody", {}, cases.length ? cases.map(c => h("tr", {},
+        h("td", { class: "mono" }, c.case_id), h("td", {}, c.title), h("td", { class: "sev-" + c.severity }, c.severity),
+        h("td", {}, c.agent_id || "—"), h("td", {}, c.evidence ? `${(c.evidence.files || []).length} file(s)` : "none"),
+        h("td", {}, fmt(c.created_at)),
+        h("td", {}, h("div", { class: "row-actions" },
+          !c.evidence && h("button", { class: "btn", onclick: () => act("POST", `/cases/${c.case_id}/collect-evidence`, undefined, "Evidence collected") }, "Collect evidence"),
+          c.evidence && h("button", { class: "btn", onclick: () => verifyCase(c.case_id) }, "Verify integrity")))))
+        : h("tr", {}, h("td", { colspan: 7, class: "muted" }, "No cases yet.")))));
+  },
+
+  async "Threat intel"() {
+    const ioc = h("input", { placeholder: "8.8.8.8, URL or file hash", required: true, size: 40 });
+    const type = h("select", {}, ["ip", "url", "hash"].map(t => h("option", { value: t }, t)));
+    const out = h("div");
+    const form = h("form", { class: "inline", onsubmit: async ev => {
+      ev.preventDefault(); out.replaceChildren(h("p", { class: "muted" }, "Checking…"));
+      try {
+        const r = await api("POST", "/threat-intel/check", { ioc: ioc.value.trim(), type: type.value });
+        out.replaceChildren(h("p", {}, "Reputation: ", h("strong", { class: "sev-" + r.reputation }, r.reputation), r.cached ? " (cached)" : "", r.note ? ` — ${r.note}` : ""),
+          h("pre", {}, JSON.stringify(r, null, 2)));
+      } catch (e) { out.replaceChildren(h("p", { class: "sev-HIGH" }, e.message)); }
+    } }, ioc, type, h("button", { class: "btn primary", type: "submit" }, "Check"));
+    return h("div", { class: "panel" }, form, out);
+  },
+
+  async "Audit"() {
+    const { audit } = await api("GET", "/audit");
+    return h("div", { class: "panel" }, h("table", {},
+      h("thead", {}, h("tr", {}, ["Time", "Actor", "Action", "Target", "Detail"].map(t => h("th", {}, t)))),
+      h("tbody", {}, audit.map(a => h("tr", {}, h("td", {}, fmt(a.timestamp)), h("td", {}, a.actor), h("td", {}, chip(a.action)), h("td", { class: "mono" }, a.target), h("td", {}, a.detail))))));
+  },
+};
+
+async function act(method, path, body, okText) {
+  try {
+    const r = await api(method, path, body);
+    toast(r.error ? r.error : okText);
+  } catch (e) { toast("Failed: " + e.message, 6000); }
+  render();
+}
+
+async function verifyCase(caseId) {
+  try {
+    const r = await api("POST", `/cases/${caseId}/verify`);
+    showDetail(h("h2", {}, `Evidence integrity: ${caseId}`),
+      h("p", { class: r.valid ? "st-valid" : "sev-HIGH" }, r.valid ? "Valid: every file matches its SHA-256 hash." : "INTEGRITY FAILURE"),
+      r.problems && r.problems.length ? h("ul", {}, r.problems.map(p => h("li", { class: "mono" }, p))) : null);
+  } catch (e) { toast("Verify failed: " + e.message, 6000); }
+}
+
+async function alertDetail(id) {
+  const a = await api("GET", "/alerts/" + id);
+  const playbookSelect = h("select", {}, h("option", { value: "" }, "(default for type)"),
+    ["PB-002", "PB-003", "PB-004", "PB-005"].map(p => h("option", { value: p }, p)));
+  showDetail(
+    h("h2", {}, `Alert #${a.id}: ${a.description}`),
+    h("p", {}, chip(a.alert_type), " ", h("span", { class: "sev-" + a.severity }, a.severity), " · source ", h("span", { class: "mono" }, a.source_ip || "—"), " · agent ", a.agent_id || "—"),
+    h("h3", {}, "Indicators"), h("pre", {}, JSON.stringify(a.iocs, null, 2)),
+    h("h3", {}, "Executions"),
+    a.executions.length ? h("ul", {}, a.executions.map(e => h("li", {}, `#${e.id} ${e.playbook_id} — `, h("span", { class: "st-" + e.status }, e.status)))) : h("p", { class: "muted" }, "None"),
+    h("form", { class: "inline", onsubmit: ev => { ev.preventDefault(); document.getElementById("detail").close();
+      const body = { alert_id: a.id }; if (playbookSelect.value) body.playbook_id = playbookSelect.value;
+      act("POST", "/playbooks/run", body, "Playbook started"); } },
+      playbookSelect, h("button", { class: "btn primary", type: "submit" }, "Run playbook")),
+    h("h3", {}, "Raw Wazuh alert"), h("pre", {}, JSON.stringify(a.raw, null, 2)));
+}
+
+async function executionDetail(id) {
+  const e = await api("GET", "/playbooks/executions/" + id);
+  showDetail(
+    h("h2", {}, `Execution #${e.id}: ${e.playbook_id} (${e.status})`),
+    h("p", { class: "muted" }, `Triggered by ${e.triggered_by}${e.approved_by ? ", approved/rejected by " + e.approved_by : ""}`),
+    h("table", {}, h("thead", {}, h("tr", {}, ["Step", "Status", "Detail", "Finished"].map(t => h("th", {}, t)))),
+      h("tbody", {}, e.steps.map(s => h("tr", {}, h("td", {}, s.step), h("td", { class: "st-" + s.status }, s.status), h("td", {}, s.detail), h("td", {}, fmt(s.finished_at)))))),
+    e.result ? [h("h3", {}, "Result"), h("pre", {}, JSON.stringify(e.result, null, 2))] : null);
+}
+
+function showDetail(...nodes) {
+  document.getElementById("detail-body").replaceChildren(...nodes.flat().filter(Boolean));
+  const d = document.getElementById("detail");
+  if (!d.open) d.showModal();
+}
+
+async function downloadReport() {
+  try {
+    const report = await api("POST", "/reports/generate");
+    const blob = new Blob([JSON.stringify(report, null, 2)], { type: "application/json" });
+    const link = h("a", { href: URL.createObjectURL(blob), download: `soar-lite-report-${new Date().toISOString().slice(0, 19).replace(/:/g, "")}.json` });
+    document.body.append(link); link.click(); link.remove();
+  } catch (e) { toast("Report failed: " + e.message, 6000); }
+}
+
+async function render() {
+  const view = document.getElementById("view");
+  try {
+    const content = await views[current]();
+    view.replaceChildren(...[content].flat());
+  } catch (e) {
+    view.replaceChildren(h("div", { class: "panel sev-HIGH" }, e.message));
+  }
+}
+
+function drawTabs() {
+  document.getElementById("tabs").replaceChildren(...TABS.map(t =>
+    h("button", { class: t === current ? "active" : "", onclick: () => { current = t; drawTabs(); render(); } }, t)));
+}
+
+function start(username) {
+  document.getElementById("login").hidden = true;
+  document.getElementById("app").hidden = false;
+  document.getElementById("whoami").textContent = username || "";
+  drawTabs(); render(); connectWs();
+}
+
+if (token) start(""); else showLogin();
+</script>
+</body>
+</html>

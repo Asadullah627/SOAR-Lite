@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+env.sh
+backend/*.db
+backend/*.db-*
+evidence/
+*.log

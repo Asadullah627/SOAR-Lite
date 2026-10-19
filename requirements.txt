@@ -1,0 +1,7 @@
+starlette>=0.27,<1.0
+uvicorn>=0.23
+# uvicorn needs a WebSocket implementation for the dashboard's live /ws endpoint
+websockets>=11
+psutil>=5.9
+# optional: nicer test runner (the suite runs with plain unittest)
+# pytest>=7
